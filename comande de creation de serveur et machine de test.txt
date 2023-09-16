@@ -1,0 +1,198 @@
+Compris, voici la solution complète pour configurer un serveur DNS sur une machine virtuelle nommée "serveur" avec l'adresse IP 10.0.0.126 et une machine virtuelle de test nommée "testclient" avec l'adresse IP 10.0.0.127 en utilisant Vagrant et Ubuntu :
+
+**Étape 1 : Configuration du fichier Vagrant**
+
+Assurez-vous d'avoir Vagrant installé sur votre machine hôte. Ensuite, créez un répertoire pour votre projet Vagrant et placez-vous dedans. Créez un fichier `Vagrantfile` avec le contenu suivant :
+
+```ruby
+Vagrant.configure("2") do |config|
+  # Configuration de la machine virtuelle serveur DNS
+  config.vm.define "serveur" do |serveur|
+    serveur.vm.box = "ubuntu/bionic64"
+    serveur.vm.network "private_network", type: "static", ip: "10.0.0.126"
+    serveur.vm.hostname = "serveurdns"
+  end
+
+  # Configuration de la machine virtuelle de test
+  config.vm.define "testclient" do |testclient|
+    testclient.vm.box = "ubuntu/bionic64"
+    testclient.vm.network "private_network", type: "static", ip: "10.0.0.127"
+    testclient.vm.hostname = "machinetest"
+  end
+end
+```
+
+**Étape 2 : Création et démarrage des machines virtuelles**
+
+Exécutez la commande suivante dans le répertoire contenant le fichier `Vagrantfile` pour créer et démarrer les deux machines virtuelles :
+
+```bash
+vagrant up
+```
+
+Cela créera les machines virtuelles "serveur" et "testclient" avec les adresses IP spécifiées.
+
+**Étape 3 : Configuration de la machine virtuelle serveur DNS (10.0.0.126)**
+
+1. Connectez-vous à la machine virtuelle "serveur" (serveur DNS) en utilisant la commande suivante :
+
+```bash
+vagrant ssh serveur
+```
+
+2. Mettez à jour les packages sur la machine :
+
+```bash
+sudo apt update
+```
+
+3. Installez BIND (le serveur DNS) :
+
+```bash
+sudo apt install bind9
+```
+
+**Étape 4 : Configuration du serveur DNS (BIND)**
+
+1. Ouvrez le fichier de configuration BIND principal :
+
+```bash
+sudo nano /etc/bind/named.conf.options
+```
+
+2. Modifiez le fichier pour spécifier votre adresse IP (10.0.0.126) comme serveur DNS. Voici un exemple :
+
+```text
+options {
+    directory "/var/cache/bind";
+    listen-on { 10.0.0.126; };
+    allow-query { any; };
+    forwarders {
+        8.8.8.8;
+        8.8.4.4;
+    };
+};
+```
+
+3. Sauvegardez et quittez le fichier.
+
+4. Créez un fichier de zone pour votre domaine (`testmywebsite.com`) en créant un fichier `testmywebsite.com.zone` :
+
+```bash
+sudo nano /etc/bind/testmywebsite.com.zone
+```
+
+5. Ajoutez les enregistrements DNS pour rediriger le nom de domaine (`www.testmywebsite.com`) vers l'adresse IP de la machine de test (10.0.0.127) et définissez un enregistrement A pour votre site web à l'adresse IP 10.0.0.125. Voici un exemple :
+
+```text
+$TTL 1d
+@   IN  SOA     serveurdns.testmywebsite.com. admin.testmywebsite.com. (
+            2023091301 ; Serial
+            8H ; Refresh
+            2H ; Retry
+            1W ; Expire
+            1D ; Minimum TTL
+)
+@   IN  NS      serveurdns.testmywebsite.com.
+serveurdns   IN  A       10.0.0.126
+www IN  A       10.0.0.125
+
+```
+
+6. Sauvegardez et quittez le fichier.
+
+7. Éditez le fichier `/etc/bind/named.conf.local` pour inclure votre zone :
+
+```bash
+sudo nano /etc/bind/named.conf.local
+```
+
+Ajoutez la ligne suivante à la fin du fichier :
+
+```text
+zone "testmywebsite.com" {
+    type master;
+    file "/etc/bind/testmywebsite.com.zone";
+};
+```
+
+8. Sauvegardez et quittez le fichier.
+
+9. Redémarrez BIND pour appliquer les changements :
+
+```bash
+sudo systemctl restart bind9
+```
+
+Il semble que le fichier `/etc/systemd/resolved.conf` sur la machine "serveurdns" soit vide ou contienne les commentaires par défaut. Cela signifie que la configuration DNS spécifique que vous avez ajoutée précédemment pour spécifier l'adresse IP de votre serveur DNS BIND (10.0.0.126) n'a pas été ajoutée dans ce fichier.
+
+Pour configurer systemd-resolved pour utiliser votre propre serveur DNS BIND, suivez ces étapes :
+
+1. Ouvrez le fichier `/etc/systemd/resolved.conf` sur la machine "serveurdns" avec un éditeur de texte :
+
+```bash
+sudo nano /etc/systemd/resolved.conf
+```
+
+2. Ajoutez ou modifiez la ligne `DNS` pour spécifier l'adresse IP de votre serveur DNS BIND (10.0.0.126) :
+
+```text
+DNS=10.0.0.126
+```
+
+3. Sauvegardez et quittez le fichier.
+
+4. Redémarrez le service systemd-resolved pour appliquer la nouvelle configuration :
+
+```bash
+sudo systemctl restart systemd-resolved
+```
+
+Après avoir effectué ces étapes, votre machine "serveurdns" devrait utiliser votre serveur DNS BIND (10.0.0.126) pour résoudre les requêtes DNS, ce qui devrait résoudre le problème de résolution DNS incorrecte que vous avez rencontré précédemment.
+
+Assurez-vous également que toutes les autres configurations DNS sont correctes, y compris le fichier de zone DNS et les fichiers de configuration BIND sur la machine "serveurdns". Une fois que cela est fait, vous pouvez réessayer la commande `nslookup` pour vérifier que la résolution DNS renvoie l'adresse IP correcte pour `www.testmywebsite.com`.
+
+
+**Étape 5 : Configuration de la machine virtuelle de test (10.0.0.127)**
+
+1. Connectez-vous à la machine virtuelle "testclient" (machinetest) en utilisant la commande suivante :
+
+```bash
+vagrant ssh testclient
+```
+
+2. Ouvrez le fichier `/etc/resolv.conf` pour définir le serveur DNS sur l'adresse IP de votre serveur DNS (10.0.0.126) :
+
+```bash
+sudo nano /etc/resolv.conf
+```
+
+3. Ajoutez la ligne suivante au fichier pour spécifier le serveur DNS :
+
+```text
+nameserver 10.0.0.126
+```
+
+4. Sauvegardez et quittez le fichier.
+
+**Étape 6 : Test de la configuration**
+
+1. Sur la machine virtuelle de test (adresse IP 10.0.0.127), ouvrez un navigateur web et accédez à `http://www.testmywebsite.com/`. Vous devriez être en mesure d'accéder à votre site web à l'aide du nom de domaine, qui redirige vers l'adresse IP 10.0.0.125.
+
+2. Pour tester le bon fonctionnement du serveur DNS, ouvrez un terminal sur la machine de test (10.0.0.127) et exécutez :
+
+```bash
+nslookup www.testmywebsite.com
+```
+
+Vous devriez voir une sortie indiquant que le nom de domaine est résolu vers l'adresse IP 10.0.0.125.
+
+3. Vous pouvez également tester la résolution DNS pour votre site web en exécutant :
+
+```bash
+nslookup monsite.testmywebsite.com
+```
+
+Cela devrait vous permettre de configurer un serveur
+
+ DNS avec Vagrant et Ubuntu (adresse IP 10.0.0.126) pour rediriger le nom de domaine (`www.testmywebsite.com`) vers la machine virtuelle de test (adresse IP 10.0.0.127) tout en hébergeant votre site web sur une autre machine virtuelle (adresse IP 10.0.0.125). Assurez-vous d'adapter les adresses IP et les noms de domaine à vos besoins spécifiques.
